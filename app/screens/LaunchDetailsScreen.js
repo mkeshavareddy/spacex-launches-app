@@ -1,35 +1,69 @@
-// app/screens/LaunchDetailsScreen.js
-import React, { useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
-import { getRocketById } from '../services/spacexApi';
+import React, { useState, useEffect } from 'react';
+import {View,Text,TextInput,FlatList,TouchableOpacity,ActivityIndicator,StyleSheet} from 'react-native';
+import { getLaunches } from '../services/spacexApi';
 
-const LaunchDetailsScreen = ({ route, navigation }) => {
-  const [rocketDetails, setRocketDetails] = useState(null);
-  const [loading, setLoading] = useState(false);
+const LaunchListScreen = ({ navigation }) => {
+  const [launches, setLaunches] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // The "launch" object is passed from the List screen
-  const { launch } = route.params;
-  const { name, date_utc, success, rocket, details, links } = launch;
-  // "links.patch.small" or "links.patch.large" can be used for mission patch images
+  // NEW: filterType state
+  const [filterType, setFilterType] = useState('all');
+  // possible values: 'all', 'past', 'upcoming', 'success', 'failed'
 
   useEffect(() => {
-    navigation.setOptions({ title: name }); // Set screen title dynamically
-    fetchRocketDetails();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchLaunches();
   }, []);
 
-  const fetchRocketDetails = async () => {
+  const fetchLaunches = async () => {
     try {
       setLoading(true);
-      const rocketData = await getRocketById(rocket);
-      setRocketDetails(rocketData);
+      const data = await getLaunches();
+      setLaunches(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  // Filter based on filterType & searchQuery
+  const filteredLaunches = () => {
+    return launches
+      .filter((launch) => {
+        // search by name
+        if (searchQuery) {
+          const nameLower = launch.name.toLowerCase();
+          const queryLower = searchQuery.toLowerCase();
+          if (!nameLower.includes(queryLower)) {
+            return false;
+          }
+        }
+        // filter by past, upcoming, success, or fail
+        if (filterType === 'past') {
+          return new Date(launch.date_utc) < new Date();
+        } else if (filterType === 'upcoming') {
+          return new Date(launch.date_utc) > new Date();
+        } else if (filterType === 'success') {
+          return launch.success === true;
+        } else if (filterType === 'failed') {
+          return launch.success === false;
+        }
+        return true; // 'all'
+      })
+      .sort((a, b) => new Date(b.date_utc) - new Date(a.date_utc)); // example sort by most recent
+  };
+
+  const renderLaunchItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.launchItem}
+      onPress={() => navigation.navigate('LaunchDetails', { launch: item })}
+    >
+      <Text style={styles.missionName}>{item.name}</Text>
+      <Text style={styles.date}>{new Date(item.date_utc).toDateString()}</Text>
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
@@ -48,59 +82,86 @@ const LaunchDetailsScreen = ({ route, navigation }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Mission Patch */}
-      {links && links.patch && links.patch.small && (
-        <Image source={{ uri: links.patch.small }} style={styles.missionPatch} />
-      )}
+    <View style={styles.container}>
+      {/* Title at the top (if desired) */}
+      <Text style={styles.title}>LaunchList</Text>
 
-      <Text style={styles.title}>{name}</Text>
-      <Text style={styles.subTitle}>
-        {new Date(date_utc).toLocaleString()}
-      </Text>
-      {success !== null && (
-        <Text>
-          <Text style={styles.label}>Launch Success: </Text>
-          {success ? 'Yes' : 'No'}
-        </Text>
-      )}
-      {details && (
-        <Text>
-          <Text style={styles.label}>Details: </Text>
-          {details}
-        </Text>
-      )}
+      {/* Search bar */}
+      <TextInput
+        style={styles.searchBar}
+        placeholder="Search launches..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
 
-      {/* Rocket Details */}
-      {rocketDetails && (
-        <View style={styles.rocketContainer}>
-          <Text style={styles.rocketTitle}>Rocket Information</Text>
-          <Text style={styles.rocketText}>
-            <Text style={styles.label}>Name: </Text>
-            {rocketDetails.name}
-          </Text>
-          <Text style={styles.rocketText}>
-            <Text style={styles.label}>Company: </Text>
-            {rocketDetails.company}
-          </Text>
-          <Text style={styles.rocketText}>
-            <Text style={styles.label}>Height: </Text>
-            {rocketDetails.height?.meters} m
-          </Text>
-          <Text style={styles.rocketText}>
-            <Text style={styles.label}>Diameter: </Text>
-            {rocketDetails.diameter?.meters} m
-          </Text>
-        </View>
-      )}
-    </ScrollView>
+      {/* Filter Buttons Row */}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filterType === 'all' && styles.activeFilter,
+          ]}
+          onPress={() => setFilterType('all')}
+        >
+          <Text style={styles.filterText}>All</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filterType === 'past' && styles.activeFilter,
+          ]}
+          onPress={() => setFilterType('past')}
+        >
+          <Text style={styles.filterText}>Past</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filterType === 'upcoming' && styles.activeFilter,
+          ]}
+          onPress={() => setFilterType('upcoming')}
+        >
+          <Text style={styles.filterText}>Upcoming</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filterType === 'success' && styles.activeFilter,
+          ]}
+          onPress={() => setFilterType('success')}
+          >
+          <Text style={styles.filterText}>Success</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            filterType === 'failed' && styles.activeFilter,
+          ]}
+          onPress={() => setFilterType('failed')}
+        >
+          <Text style={styles.filterText}>Failed</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Launches List */}
+      <FlatList
+        data={filteredLaunches()}
+        keyExtractor={(item) => item.id}
+        renderItem={renderLaunchItem}
+      />
+    </View>
   );
 };
 
-export default LaunchDetailsScreen;
+export default LaunchListScreen;
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: 16,
   },
   center: {
@@ -108,37 +169,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  missionPatch: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 20, 
+    fontWeight: 'bold', 
     marginBottom: 8,
   },
-  subTitle: {
-    fontSize: 16,
-    marginBottom: 8,
+  searchBar: {
+    height: 40,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    marginBottom: 12,
+    borderRadius: 5,
   },
-  label: {
-    fontWeight: 'bold',
+  filterContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    justifyContent: 'space-between',
   },
-  rocketContainer: {
-    marginTop: 16,
+  filterButton: {
     padding: 10,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 5,
+    marginRight: 5,
+    backgroundColor: '#f5f5f5',
+  },
+  activeFilter: {
+    backgroundColor: '#ffcc00',
+  },
+  filterText: {
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  launchItem: {
+    marginBottom: 8,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 6,
+    backgroundColor: '#fff',
   },
-  rocketTitle: {
-    fontSize: 18,
+  missionName: {
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
-  rocketText: {
-    marginBottom: 4,
+  date: {
+    fontSize: 14,
+    marginTop: 4,
+    color: '#555',
   },
 });
